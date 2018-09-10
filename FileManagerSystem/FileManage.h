@@ -59,7 +59,7 @@ public:
 	char * baseAddr;
 	int blockSize;
 	FILE *fp;
-	const char* systemName;
+	char systemName[20];
 	int fcb_cur;//当前目录
 	bool bitmap[BLKNUM];//位视图，0~4104 not care
 	int fcbnum;//FCB当前总数目

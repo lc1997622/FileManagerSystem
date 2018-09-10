@@ -44,7 +44,7 @@ int FileManage::mount(char name[])
 	char Map[32768];
 	string symPath = "D:/";
 	symPath += name;
-	systemName = name;
+	strcmp(systemName, name);
 	fp = fopen(symPath.c_str(), "r+");
 	if (fp == NULL)
 	{
@@ -425,6 +425,10 @@ bool FileManage::newFile(char* oldfilename, char filename[20]) {
 		if (bitmap[i] == false) {
 			//找到第一个为空的盘块;
 			count = 1;
+			if (count == blockNum) {
+				flag = 1;
+				break;
+			}
 			for (int j = i + 1; j < BLKNUM; i++) {
 				if (bitmap[j] == false) {
 					count++;
