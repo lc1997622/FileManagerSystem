@@ -86,6 +86,7 @@ int FileManage::close()
 	symPath += "hl";
 	fp = fopen(symPath.c_str(), "r+");
 	fseek(fp, 0, SEEK_SET);
+	fcbnum = 100;
 	fwrite(&fcbnum, sizeof(int), 1, fp);
 	fseek(fp, 4096, SEEK_SET);
 
