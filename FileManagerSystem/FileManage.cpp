@@ -2,24 +2,40 @@
 #include "FileManage.h"
 #include<string>
 #include<iostream>
+#include<stdio.h>
+#include<memory.h>
+#include<fstream>
+#include<vector>
+#include <algorithm>
+#include <time.h>
 using namespace std;
 
 /*全局变量定义*/
-int fcb_cur;//当前目录，第几个fcb
-bool bitmap[BLKNUM];//位视图，0~4104 not care
-int fcbnum;//所使用的FCB当前总数目
-char minifile[20];//系统的名称
-struct FCB fcb[BLKNUM];//创建一个fcb数组
 char content[BLKSIZE * 10];//文件内容
-FILE *fp;//打开文件内容块指针
+
 
 FileManage::FileManage()
 {
 	fp = NULL;
 	baseAddr = (char*)malloc(sizeof(char) * DISKSIZE);
 	memset(baseAddr, 0, DISKSIZE);
-	fcbnum = 0;
+	fcbnum = 1;
+	fcb_min = 1;
+	fcb_emp = 1;
 	fcb_cur = 0;
+	string rootName = "root";
+	fcb[0].initialize();
+	strcpy_s(fcb[0].fileName, rootName.c_str());
+	fcb[0].fileType = true;
+	string curtime = getTime();
+	strcpy_s(fcb[0].fileTime, curtime.c_str());
+	string minifile(systemName);						//临时的空间名
+	string minifile1 = minifile.append(":");			//临时的空间名:
+	string minifile2 = minifile1.append("/"); 			//临时的空间名:"\"
+	curpath = minifile2;
+	dx = 1;
+	for (int i = 1; i < BLKNUM; i++)
+		fcb[i].initialize();
 }
 
 
@@ -45,6 +61,7 @@ int FileManage::mount(char name[])
 	string symPath = "D:/";
 	symPath += name;
 	strcmp(systemName, name);
+	printf(systemName);
 	fp = fopen(symPath.c_str(), "r+");
 	if (fp == NULL)
 	{
@@ -63,28 +80,11 @@ int FileManage::mount(char name[])
 			bitmap[8 * i + j] = (Map[i] & (1 << j)) / (1 << j);
 		}
 	}
-	for (int i = 0; i < 1024; i++)
+	for (int i = 0; i < BLKNUM; i++)
 	{
 		fread(&fcb[i], 1, 64, fp);	
 	}
 	/*getFcbArray();*/
-
-	//对fcb函数进行测试，初始化fcb的数组
-	struct FCB f;
-	strcpy(f.fileName, "first_FCB");
-	f.fileSize = 0;
-	f.fileType = true;
-	f.delFlag = false;
-	f.FCBNum = 1;
-	f.fileContent = -1;
-	f.fFCB = -1;
-	f.lFCB = -1;
-	f.rFCB = -1;
-	f.sFCB = -1;
-
-	fcb[fcb_cur] = f;
-	fclose(fp);
-	return 1;
 }
 //需加上对fcb的重新写入
 int FileManage::close()
@@ -220,6 +220,10 @@ void FileManage::getFcbArray() {
 //	}
 //}
 
+
+
+
+
 // string分割函数
 void FileManage::split(const string&s, vector<string>&v, const string&key)
 {
@@ -235,20 +239,75 @@ void FileManage::split(const string&s, vector<string>&v, const string&key)
 		v.push_back(s.substr(pos1));
 }
 
-// 单(反)斜杠变为双反斜杠	
-string FileManage::changeSlash(string str) {
-	string::size_type pos = 0;
-	while ((pos = str.find_first_of('\\', pos)) != string::npos)
-	{
-		str.insert(pos, "\\");//插入
-		pos = pos + 2;
+// 获取系统时间
+string FileManage::getTime()
+{
+	struct tm t;   //tm结构指针
+	time_t now;  //声明time_t类型变量
+	time(&now);      //获取系统日期和时间
+	localtime_s(&t, &now);   //获取当地日期和时间
+	string time = "";
+	string year, mon = "0", day = "0", hour = "0", min = "0", sec = "0";
+	// 年
+	year = std::to_string(t.tm_year + 1900);
+	// 月
+	if (t.tm_mon >= 0 && t.tm_mon <= 8) {
+		mon.append(std::to_string(t.tm_mon + 1));
 	}
-	return str;
+	else {
+		mon = std::to_string(t.tm_mon + 1);
+	}
+	// 日
+	if (t.tm_mday > 0 && t.tm_mday <= 9) {
+		day.append(std::to_string(t.tm_mday));
+	}
+	else {
+		day = std::to_string(t.tm_mday);
+	}
+	// 时
+	if (t.tm_hour >= 0 && t.tm_hour <= 9) {
+		hour.append(std::to_string(t.tm_hour));
+	}
+	else {
+		hour = std::to_string(t.tm_hour);
+	}
+	// 分
+	if (t.tm_min >= 0 && t.tm_min <= 9) {
+		min.append(std::to_string(t.tm_min));
+	}
+	else {
+		min = std::to_string(t.tm_min);
+	}
+	//秒
+	if (t.tm_sec >= 0 && t.tm_sec <= 9) {
+		sec.append(std::to_string(t.tm_sec));
+	}
+	else {
+		sec = std::to_string(t.tm_sec);
+	}
+	time.append(year).append(mon).append(day).append(hour).append(min).append(sec);
+	return time;
+}
+
+// 计算dx
+int FileManage::cal_dx(int curfcb) {
+	curfcb = fcb_min;
+	int i;
+	do
+	{
+		for (i = fcb_min + 1; i < BLKNUM; i++) {
+			if (fcb[i].FCBNum == -1 || fcb[i].delFlag == true) {
+				fcb_min = i;
+				break;
+			}
+		}
+	} while (i == BLKNUM);
+	dx = fcb_min - curfcb;
+	return dx;
 }
 
 // 改变目录(目标路径)
 bool FileManage::cd(string str) {
-	str = changeSlash(str);
 	int fcb_tmp = fcb_cur;// 当前目录FCB号
 	// cd ..
 	if (str.compare("..") == 0) {
@@ -264,11 +323,11 @@ bool FileManage::cd(string str) {
 	}
 	// cd .	路径处理
 	vector<string>strArr;
-	split(str, strArr, "\\");
+	split(str, strArr, "/");
 
 	if (strArr.size() == 1) {
 		// cd 当前路径一级目录
-		if (strArr[0].compare("mini-FS:") != 0) {
+		if (strArr[0].compare(minifile1) != 0) {
 			if (fcb[fcb_tmp].sFCB != -1) {
 				fcb_tmp = fcb[fcb_tmp].sFCB;
 				int flag = 0;
@@ -277,7 +336,7 @@ bool FileManage::cd(string str) {
 					// 找到目标目录
 					if (strArr[0].compare(sFileName) == 0) {
 						fcb_cur = fcb_tmp;
-						curpath.append("\\");
+						curpath.append("/");
 						curpath.append(sFileName);
 						flag = 1;
 						break;
@@ -296,14 +355,14 @@ bool FileManage::cd(string str) {
 		// 返回根目录
 		else {
 			fcb_cur = 0;
-			curpath = "mini-FS:\\";
+			curpath = minifile2;
 		}
 	}
 	else {
 		string path_tmp;
 		int i;
 		// cd 当前路径多级目录
-		if (strArr[0].compare("mini-FS:") != 0) {
+		if (strArr[0].compare(minifile1) != 0) {
 			for (i = 0; i < strArr.size(); i++) {
 				if (fcb[fcb_tmp].sFCB != -1) {
 					fcb_tmp = fcb[fcb_tmp].sFCB;
@@ -312,7 +371,7 @@ bool FileManage::cd(string str) {
 						string sFileName(fcb[fcb_tmp].fileName);
 						// 找到下一级目录
 						if (strArr[i].compare(sFileName) == 0) {
-							path_tmp.append("\\");
+							path_tmp.append("/");
 							path_tmp.append(sFileName);
 							flag = 1;
 							break;
@@ -379,6 +438,121 @@ bool FileManage::cd(string str) {
 	return true;
 }
 
+// 当前目录(不为空)下创建文件夹
+bool FileManage::mkdir_cur_not_empty(string strArr, int cur_tmp) {
+	int fcb_tmp = fcb[cur_tmp].sFCB;
+	int flag = 0;
+	do {
+		string sFileName(fcb[fcb_tmp].fileName);
+		// 找到相同文件名
+		if (strArr.compare(sFileName) == 0) {
+			flag = 1;
+			break;
+		}
+		else {
+			fcb_tmp = fcb[fcb_tmp].rFCB;
+		}
+	} while (fcb_tmp != NULL);
+	// 没有相同文件名
+	if (flag == 0) {
+		fcb[fcb_tmp].rFCB = fcb_emp;
+		fcb[fcb_emp].initialize();
+		strcpy_s(fcb[fcb_emp].fileName, strArr.c_str());
+		fcb[fcb_emp].fileType = true;
+		string curtime = getTime();
+		strcpy_s(fcb[fcbnum].fileTime, curtime.c_str());
+		fcb[fcb_emp].FCBNum = fcb_emp;
+		fcb[fcb_emp].lFCB = fcb_tmp;
+	}
+	// 有相同文件名
+	else {
+		tmp = fcb_tmp;
+		return false;
+	}
+	fcb_emp += cal_dx(cur_tmp);
+	fcbnum++;
+	return true;
+}
+
+// 当前目录(为空)下创建文件夹
+void FileManage::mkdir_cur_empty(string strArr, int cur_tmp) {
+	fcb[cur_tmp].sFCB = fcb_emp;
+	fcb[fcb_emp].initialize();
+	strcpy_s(fcb[fcb_emp].fileName, strArr.c_str());
+	fcb[fcb_emp].fileType = true;
+	string curtime = getTime();
+	strcpy_s(fcb[fcbnum].fileTime, curtime.c_str());
+	fcb[fcb_emp].FCBNum = fcb_emp;
+	fcb[fcb_emp].fFCB = cur_tmp;
+	fcb_emp += cal_dx(cur_tmp);
+	fcbnum++;
+}
+
+// 创建子目录
+bool FileManage::mkdir(string str) {
+	int fcb_tmp = fcb_cur;// 当前目录FCB号
+	// mkdir 路径处理
+	vector<string>strArr;
+	split(str, strArr, "/");
+
+	// mkdir 当前目录下创建
+	if (strArr.size() == 1) {
+		// 当前目录不为空
+		if (fcb[fcb_cur].sFCB != -1) {
+			if (!mkdir_cur_not_empty(strArr[0], fcb_tmp)) {
+				return false;
+			}
+		}
+		// 当前目录为空
+		else {
+			mkdir_cur_empty(strArr[0], fcb_tmp);
+		}
+	}
+	else {
+		int i;
+		// mkdir 当前多级目录下创建
+		if (strArr[0].compare(minifile1) != 0) {
+			for (i = 0; i < strArr.size(); i++) {
+				if (fcb[fcb_tmp].sFCB != -1) {
+					if (!mkdir_cur_not_empty(strArr[i], fcb_tmp) && i == strArr.size() - 1) {
+						cout << strArr[i] << "文件名已存在" << endl;
+						return false;
+					}
+					if (!mkdir_cur_not_empty(strArr[i], fcb_tmp) && i != strArr.size()) {
+						fcb_tmp = tmp;
+					}
+				}
+				else {
+					mkdir_cur_empty(strArr[i], fcb_tmp);
+					fcb_tmp = fcb_emp - dx;// 获取所要创建空文件夹的父目录的fcb块号
+				}
+			}
+		}
+		// mkdir 绝对路径创建
+		else {
+			fcb_tmp = 0;
+			for (i = 1; i < strArr.size(); i++) {
+				if (fcb[fcb_tmp].sFCB != -1) {
+					if (!mkdir_cur_not_empty(strArr[i], fcb_tmp)) {
+						return false;
+					}
+				}
+				else {
+					mkdir_cur_empty(strArr[i], fcb_tmp);
+				}
+				fcb_tmp = fcb_emp - dx;
+			}
+		}
+	}
+	return true;
+}
+
+
+
+
+
+
+
 //获取文件的大小
 int FileManage::file_size(char* filename) {
 	FILE *f = fopen(filename, "r");
@@ -389,8 +563,8 @@ int FileManage::file_size(char* filename) {
 }
 
 //创建新的文件
-bool FileManage::newFile(char* oldfilename, char filename[20]) {
-	struct FCB newFcb= {
+bool FileManage::newFile(char filename[20]) {
+	struct FCB newFcb = {
 		"",
 		0,
 		false,
@@ -403,90 +577,9 @@ bool FileManage::newFile(char* oldfilename, char filename[20]) {
 		-1,
 		-1
 	};
-
-	strcpy(newFcb.fileName, filename);
-	newFcb.fileType = false;
-	strcpy(newFcb.fileTime, "0");//之后讨论存取什么时间
-	newFcb.delFlag = false;
-	for (int i = 0; i < 4096; i++) {
-		if (fcb[i].delFlag == true || fcb[i].fileName == NULL) {
-			//找到第一个可以存fcb的地方
-			newFcb.FCBNum = i;
-			break;
-		}
-	}
-	//搜索位示图找到第一个为值为0的连续盘块号	
-	newFcb.fileSize = file_size(oldfilename);
-	int blockNum = newFcb.fileSize / 4096 + 1;//获取一个文件要存的盘块数
-	int count = 0;
-	int flag = 0;
-	int i;
-	for (i = 4105; i < BLKNUM; i++) {
-		if (bitmap[i] == false) {
-			//找到第一个为空的盘块;
-			count = 1;
-			if (count == blockNum) {
-				flag = 1;
-				break;
-			}
-			for (int j = i + 1; j < BLKNUM; i++) {
-				if (bitmap[j] == false) {
-					count++;
-					if (count == blockNum) {
-						flag = 1;
-						break;
-					}
-				}
-				else {
-					count = 0;
-					break;
-				}
-			}
-			if (flag = 1) {
-				break;
-			}
-		}
-
-	}
-	if (flag == 1) {
-		newFcb.fileContent = i;//赋值该文件的起始的内容信息块
-		printf("第一个信息块%d\n", i);
-		for (int t = 0; t <= count; t++) {
-			bitmap[t + i] = true;
-		}
-	}
-	else {
-		printf("创建失败");
-		return false;
-	}
-
-	//开始写文件，以一个盘块为单位进行写入
-	fp = fopen(systemName, "w");
-	fseek(fp, CONTENTSTART,SEEK_SET);
-
-	FILE *oldfp = fopen(oldfilename, "r");
-	if (oldfp == NULL) {
-		printf("获取路径失败");//获取操作系统下的路径失败；
-		return false;
-	}
-	char *temp[4096];
-	int remaining = newFcb.fileSize;//刚开始剩余的字节数就是总的字节数;
-	for (i = 0; i < blockNum; i++) {
-		if (remaining > 4096) {
-			//说明该盘块要存满
-			
-			fread(temp, 1, 4096, oldfp);
-			printf("第一个字符%c",temp[0]);
-			fwrite(temp, 1, 4096, fp);
-			remaining -= 4096;
-		}
-		else {
-			fread(temp, 1, remaining, oldfp);
-			fwrite(temp, 1, remaining, fp);
-		}
-	}
 	struct FCB fcbPre = fcb[fcb_cur];
 	//当前的这个节点没有子节点，说明创建的这个节点是当前节点的第一个子节点
+
 	if (fcbPre.sFCB == -1) {
 		fcbPre.sFCB = newFcb.FCBNum;
 		newFcb.fFCB = fcbPre.FCBNum;
@@ -498,15 +591,32 @@ bool FileManage::newFile(char* oldfilename, char filename[20]) {
 		while (1) {
 			if (broFcb.rFCB == -1) {
 				//找到了最后一个兄弟节点
+				if (strcmp(broFcb.fileName, newFcb.fileName) == 0) {
+					printf("该文件已存在！");
+					return false;
+				}
 				broFcb.rFCB = newFcb.FCBNum;
 				newFcb.lFCB = broFcb.FCBNum;
+
 				break;
 			}
 			//下一个兄弟节点为当前节点的右兄弟节点
 			broFcb = fcb[broFcb.rFCB];
 		}
 	}
-	fcb[i]=newFcb;
+	strcpy(newFcb.fileName, filename);
+	newFcb.fileType = false;
+	strcpy(newFcb.fileTime, "0");//之后讨论存取什么时间
+	newFcb.delFlag = false;
+	for (int i = 0; i < 4096; i++) {
+		if (fcb[i].delFlag == true || fcb[i].fileName == NULL) {
+			//找到第一个可以存fcb的地方
+			newFcb.FCBNum = i;
+			break;
+		}
+	}
+
+	fcb[newFcb.FCBNum] = newFcb;
 	return true;
 }
 //打印目录，fcb_cur不改变
@@ -577,52 +687,52 @@ void FileManage::showAtt(char* filename)
 
 /*write by zm*/
 //将盘块号为blocknum的读入content
-void FileManage::read(int blocknum)
-{
-	int i, j;
-	char ch;
-	char buffer[BLKSIZE];
-	fp = fopen(minifile, "r");
-	//定位到盘块号的起始指针
-	fseek(fp, BLKSIZE * (blocknum - 1), SEEK_SET);
-	//将内容读取到缓冲区
-	fread(content, 1, fcb[blocknum].fileSize + 1, fp);
-	fclose(fp);
-}
+//void filemanage::read(int blocknum)
+//{
+//	int i, j;
+//	char ch;
+//	char buffer[blksize];
+//	fp = fopen(minifile, "r");
+//	//定位到盘块号的起始指针
+//	fseek(fp, blksize * (blocknum - 1), seek_set);
+//	//将内容读取到缓冲区
+//	fread(content, 1, fcb[blocknum].filesize + 1, fp);
+//	fclose(fp);
+//}
 
 //显示文件内容
-void FileManage::show(char *filename)
-{
-	//filename文件对应的盘块号
-	int ibNum;
-	//当前目录的子节点对应的fcb下标号
-	int fcb_son = fcb[fcb_cur].sFCB;
-	if (fcb_son == -1) {
-		printf("当前文件夹下没有文件，是否新建？");
-		if (getchar() == 'y')
-		{
-			//newFile(filename);
-			printf("%s 文件已创建。", filename);
-		}
-		return;
-	}
-	else {
-		//查找内容块对应的盘块号(ibNum)
-		while (fcb[fcb_son].rFCB != -1)
-		{
-			if (strcmp(fcb[fcb_son].fileName, filename)) {
-				ibNum = fcb[fcb_son].fileContent;
-				break;
-			}
-			else
-				fcb_son = fcb[fcb_son].rFCB;//同级移动查找
-		}
-		read(ibNum);
-		printf("%s", content);
-		printf("\n");
-		//close();
-	}
-}
+//void filemanage::show(char *filename)
+//{
+//	//filename文件对应的盘块号
+//	int ibnum;
+//	//当前目录的子节点对应的fcb下标号
+//	int fcb_son = fcb[fcb_cur].sfcb;
+//	if (fcb_son == -1) {
+//		printf("当前文件夹下没有文件，是否新建？");
+//		if (getchar() == 'y')
+//		{
+//			//newfile(filename);
+//			printf("%s 文件已创建。", filename);
+//		}
+//		return;
+//	}
+//	else {
+//		//查找内容块对应的盘块号(ibnum)
+//		while (fcb[fcb_son].rfcb != -1)
+//		{
+//			if (strcmp(fcb[fcb_son].filename, filename)) {
+//				ibnum = fcb[fcb_son].filecontent;
+//				break;
+//			}
+//			else
+//				fcb_son = fcb[fcb_son].rfcb;//同级移动查找
+//		}
+//		read(ibnum);
+//		printf("%s", content);
+//		printf("\n");
+//		//close();
+//	}
+//}
 
 //查找文件的fcb序列号，不存在就返回-1
 int FileManage::fcbSearch(char *filename)
@@ -807,3 +917,23 @@ again:
 	}
 
 }*/
+//获取文件在磁盘中所占用的所有的盘块
+//void FileManage::getMap(string str) {
+//	//读取文件的路径获取文件的fcb的值
+//	if (cd(str)) {
+//		int startblock = fcb[fcb_cur].fileContent;//获取第一个盘块
+//		int count = fcb[fcb_cur].fileSize / 4096;//获取所占的盘块数
+//		for (int j = 0; j <= count; j++) {
+//			if (j == count) {
+//				printf("%d", startblock + j);
+//			}
+//			else {
+//
+//				printf("%d,", startblock + j);
+//			}
+//		}
+//	}
+//	else {
+//		printf("该文件不存在");
+//	}
+//}
