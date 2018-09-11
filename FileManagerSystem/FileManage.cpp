@@ -37,7 +37,6 @@ FileManage::FileManage()
 	dx = 1;
 	for (int i = 1; i < BLKNUM; i++)
 		fcb[i].initialize();
-	close();
 }
 
 
@@ -62,7 +61,7 @@ int FileManage::mount(char name[])
 	char Map[32768];
 	string symPath = "D:/";
 	symPath += name;
-	strcmp(systemName, name);
+	strcpy(systemName, name);
 	fp = fopen(symPath.c_str(), "r+");
 	if (fp == NULL)
 	{
@@ -92,7 +91,8 @@ int FileManage::mount(char name[])
 int FileManage::close()
 {
 	char Map[32768];
-	string symPath = "D:/kk";
+	string symPath = "D:";
+	symPath += systemName;
 	fp = fopen(symPath.c_str(), "r+");
 	fseek(fp, 0, SEEK_SET);
 	fwrite(&fcbnum, sizeof(int), 1, fp);
@@ -313,9 +313,13 @@ bool FileManage::cd(string str) {
 	// cd ..
 	if (str.compare("..") == 0) {
 		if (fcb_cur == 0) {
-			cout << "你已经在根目录下" << endl << endl;
+			cout << "你已经在根目录下" << endl;
 		}
 		else {
+			while (fcb[fcb_tmp].lFCB != -1) // 找到上一级目录的子节点
+			{
+				fcb_tmp = fcb[fcb_tmp].lFCB;
+			}
 			fcb_cur = fcb[fcb_tmp].fFCB;
 			int tmp_size = strlen(fcb[fcb_tmp].fileName);
 			curpath.erase(curpath.size() - tmp_size - 1);// 返回上一级
@@ -337,9 +341,10 @@ bool FileManage::cd(string str) {
 					string sFileName(fcb[fcb_tmp].fileName);
 					// 找到目标目录
 					if (strArr[0].compare(sFileName) == 0) {
-						fcb_cur = fcb_tmp;
-						curpath.append("/");
+						if (fcb_cur != 0)
+							curpath.append("/");
 						curpath.append(sFileName);
+						fcb_cur = fcb_tmp;
 						flag = 1;
 						break;
 					}
@@ -662,11 +667,11 @@ void FileManage::showAtt(char* filename)
 					strcpy(str, "文件");
 				else
 					strcpy(str, "文件夹");
-				cout << "文件名:" << currentFCB.fileName << endl;
-				cout << "文件大小:" << currentFCB.fileSize << endl;
-				cout << "文件类型" << str << endl;
-				cout << "最后修改时间:" << currentFCB.fileTime << endl;
-				cout << "文件内容盘块号:" << currentFCB.fileContent << endl;
+				cout << "文件名: " << currentFCB.fileName << endl;
+				cout << "文件大小: " << currentFCB.fileSize << endl;
+				cout << "文件类型: " << str << endl;
+				cout << "最后修改时间: " << currentFCB.fileTime << endl;
+				cout << "文件内容盘块号: " << currentFCB.fileContent << endl;
 				break;
 			}
 			else
@@ -820,17 +825,19 @@ void FileManage::move(char *filename, char * dirname)
 	}
 }
 
-/*
+
 //删除文件，fcb_cur改变为被删除文件的父节点
 bool FileManage::delFile(char* filename)
 {
 	char flag;
+	int cur = fcb_cur;
 	if (cd(filename) == 0)
 		return 0;
 	struct FCB *currentFCB = &fcb[fcb_cur];//被删除文件
 	fcb_cur = fcb[currentFCB->fFCB].FCBNum;//fcb_cur为当前文件的父节点
+	
 again:
-	cout << "确认删除" << filename << "[y,n]?" << endl;
+	cout << "确认删除" << filename << "[y,n]?";
 	cin >> flag;
 	if (flag == 'n' || flag == 'N')//确认不删除
 		return 0;
@@ -876,6 +883,8 @@ again:
 				bitmap[i] = 0;
 			if (currentFCB->FCBNum < delMin)
 				delMin = currentFCB->FCBNum;
+			while (fcb_cur != cur)
+				cd("..");
 			return 1;
 		}
 		else//删除一个文件夹
@@ -902,10 +911,14 @@ again:
 					else
 						break;
 				} while (1);
+				while (fcb_cur != cur)
+					cd("..");
 				return 1;
 			}
 			else//子节点为空
 			{
+				while (fcb_cur != cur)
+					cd("..");
 				return 1;
 			}
 		}
@@ -915,7 +928,7 @@ again:
 		goto again;
 	}
 
-}*/
+}
 //获取文件在磁盘中所占用的所有的盘块
 //void FileManage::getMap(string str) {
 //	//读取文件的路径获取文件的fcb的值
