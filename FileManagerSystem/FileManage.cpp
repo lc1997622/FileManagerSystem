@@ -567,6 +567,7 @@ bool FileManage::newFile(char filename[20]) {
 	struct FCB fcbPre = fcb[fcb_cur];
 	//当前的这个节点没有子节点，说明创建的这个节点是当前节点的第一个子节点
 	
+	strcpy(newFcb.fileName, filename);
 	newFcb.fileType = false;
 	strcpy(newFcb.fileTime, "0");//之后讨论存取什么时间
 	newFcb.delFlag = false;
@@ -586,12 +587,14 @@ bool FileManage::newFile(char filename[20]) {
 		//获取第一个兄弟节点
 		struct FCB broFcb = fcb[fcbPre.sFCB];
 		while (1) {
+			//判断是否存在同名文件
+			if (strcmp(broFcb.fileName, newFcb.fileName) == 0) {
+				printf("该文件已存在！");
+				return false;
+			}
 			if (broFcb.rFCB == -1) {
 				//找到了最后一个兄弟节点
-				if (strcmp(broFcb.fileName, newFcb.fileName) == 0) {
-					printf("该文件已存在！");
-					return false;
-				}
+
 				fcb[broFcb.FCBNum].rFCB = newFcb.FCBNum;
 				newFcb.lFCB = broFcb.FCBNum;
 				
@@ -602,7 +605,7 @@ bool FileManage::newFile(char filename[20]) {
 		}
 	}
 	newFcb.rFCB = -1;
-	strcpy(newFcb.fileName, filename);
+
 	fcb[newFcb.FCBNum] = newFcb;
 	return true;
 }
@@ -673,53 +676,130 @@ void FileManage::showAtt(char* filename)
 }
 
 /*write by zm*/
+//写入文件内容（已知filename）
+void FileManage::write(char *filename)
+{
+	char tmpChar;
+	//当前目录的子节点对应的fcb下标号，即孩子节点所在层级
+	int fcb_son = fcb[fcb_cur].sFCB;
+	if (fcb_son == -1) {
+		printf("当前文件夹下没有文件，是否新建？");
+		if (getchar() == 'y')
+		{
+			newFile(filename);
+			printf("已创建文件：%s。\n", filename);
+		}
+		return;
+	}
+	else {
+		//查找内容块对应的盘块号(ibNum)
+		do
+		{
+			if (strcmp(fcb[fcb_son].fileName, filename) == 0) {
+				int count = 0, flag = 0;
+				int contentStart;
+				//若匹配，则此时fcb_son的值就是对应需要写入的fcb下标
+				printf("请输入你需要的文件大小：0~40960字节\n");
+				cin >> fcb[fcb_son].fileSize;
+				int blockNum = fcb[fcb_son].fileSize / 4096 + 1;//需要存入的盘块数目
+				printf("请输入你的内容，以#作为结束标识：\n");
+				for (int i = 0; i < sizeof(content); i++)
+				{
+					tmpChar = getchar();
+					if (tmpChar == '#')
+						break;
+					content[i] = tmpChar;
+					
+				}//内容存入缓冲区
+				//测试：
+				//cout << "你的输入是：" << content << endl;
+				for (int i = 4105; i < BLKNUM; i++) {
+					if (bitmap[i] == false) {
+						//找到第一个为空的盘块;
+						count = 1;
+						contentStart = i;
+						if (count == blockNum) {
+							flag = 1;
+							break;
+						}
+						for (int j = i + 1; j < BLKNUM; j++) {
+							if (bitmap[j] == false) {
+								count++;
+								if (count == blockNum) {
+									flag = 1;
+									break;
+								}
+							}
+							else {
+								count = 0;
+								break;
+							}
+						}
+						if (flag = 1) {
+							break;
+						}
+					}
+
+				}//找到contentStart，将其赋给fileContent
+				fcb[fcb_son].fileContent = contentStart;
+				//写入内容到磁盘
+				fp = fopen(systemName, "w+");
+				//fp = fopen("d:\\zm", "w+");
+				//定位到盘块号的起始指针,这里blocknum从1开始
+				fseek(fp, contentStart*BLKSIZE, SEEK_SET);
+				fwrite(content, fcb[fcb_son].fileSize, 1, fp);
+				fclose(fp);
+				break;
+			}
+			else
+				fcb_son = fcb[fcb_son].rFCB;//同级移动查找
+		} while (fcb[fcb_son].rFCB != -1);
+	}
+}
+
 //将盘块号为blocknum的读入content
-//void filemanage::read(int blocknum)
-//{
-//	int i, j;
-//	char ch;
-//	char buffer[blksize];
-//	fp = fopen(minifile, "r");
-//	//定位到盘块号的起始指针
-//	fseek(fp, blksize * (blocknum - 1), seek_set);
-//	//将内容读取到缓冲区
-//	fread(content, 1, fcb[blocknum].filesize + 1, fp);
-//	fclose(fp);
-//}
+void FileManage::read(int blocknum)
+{
+	fp = fopen(systemName, "r");
+	//定位到盘块号的起始指针
+	fseek(fp, BLKSIZE * blocknum , SEEK_SET);
+	//将内容读取到缓冲区
+	fread(content, 1, fcb[blocknum].fileSize, fp);
+	fclose(fp);
+}
 
 //显示文件内容
-//void filemanage::show(char *filename)
-//{
-//	//filename文件对应的盘块号
-//	int ibnum;
-//	//当前目录的子节点对应的fcb下标号
-//	int fcb_son = fcb[fcb_cur].sfcb;
-//	if (fcb_son == -1) {
-//		printf("当前文件夹下没有文件，是否新建？");
-//		if (getchar() == 'y')
-//		{
-//			//newfile(filename);
-//			printf("%s 文件已创建。", filename);
-//		}
-//		return;
-//	}
-//	else {
-//		//查找内容块对应的盘块号(ibnum)
-//		while (fcb[fcb_son].rfcb != -1)
-//		{
-//			if (strcmp(fcb[fcb_son].filename, filename)) {
-//				ibnum = fcb[fcb_son].filecontent;
-//				break;
-//			}
-//			else
-//				fcb_son = fcb[fcb_son].rfcb;//同级移动查找
-//		}
-//		read(ibnum);
-//		printf("%s", content);
-//		printf("\n");
-//		//close();
-//	}
-//}
+void FileManage::show(char *filename)
+{
+	//filename文件对应的盘块号
+	int ibnum;
+	//当前目录的子节点对应的fcb下标号
+	int fcb_son = fcb[fcb_cur].sFCB;
+	if (fcb_son == -1) {
+		printf("当前文件夹下没有文件，是否新建？");
+		if (getchar() == 'y')
+		{
+			newFile(filename);
+			printf("%s 文件已创建。", filename);
+		}
+		return;
+	}
+	else {
+		//查找内容块对应的盘块号(ibnum)
+		do
+		{
+			if (strcmp(fcb[fcb_son].fileName, filename) == 0) {
+				ibnum = fcb[fcb_son].fileContent;
+				break;
+			}
+			else
+				fcb_son = fcb[fcb_son].rFCB;//同级移动查找
+		} while (fcb[fcb_son].rFCB != -1);
+		read(ibnum);
+		printf("%s", content);
+		printf("\n");
+	}
+}
 
 //查找文件的fcb序列号，不存在就返回-1
 int FileManage::fcbSearch(char *filename)
