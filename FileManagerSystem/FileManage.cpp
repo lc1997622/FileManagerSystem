@@ -761,14 +761,6 @@ void FileManage::write(char *filename)
 
 				}//找到contentStart，将其赋给fileContent
 				fcb[fcb_son].fileContent = contentStart;
-
-				/*测试写入*/
-				/*FILE *fpp;
-				char str[] = "This is runoob.com";
-				fp = fopen("zm", "w");
-				fwrite(str, sizeof(str), 1, fp);
-				fclose(fp);*/
-
 				//写入内容到磁盘
 				fp = fopen(systemName, "w+");
 				//fp = fopen("d:\\zm", "w+");
@@ -785,52 +777,48 @@ void FileManage::write(char *filename)
 }
 
 //将盘块号为blocknum的读入content
-//void filemanage::read(int blocknum)
-//{
-//	int i, j;
-//	char ch;
-//	char buffer[blksize];
-//	fp = fopen(minifile, "r");
-//	//定位到盘块号的起始指针
-//	fseek(fp, blksize * (blocknum - 1), seek_set);
-//	//将内容读取到缓冲区
-//	fread(content, 1, fcb[blocknum].filesize + 1, fp);
-//	fclose(fp);
-//}
+void FileManage::read(int blocknum)
+{
+	fp = fopen(systemName, "r");
+	//定位到盘块号的起始指针
+	fseek(fp, BLKSIZE * blocknum , SEEK_SET);
+	//将内容读取到缓冲区
+	fread(content, 1, fcb[blocknum].fileSize, fp);
+	fclose(fp);
+}
 
 //显示文件内容
-//void filemanage::show(char *filename)
-//{
-//	//filename文件对应的盘块号
-//	int ibnum;
-//	//当前目录的子节点对应的fcb下标号
-//	int fcb_son = fcb[fcb_cur].sfcb;
-//	if (fcb_son == -1) {
-//		printf("当前文件夹下没有文件，是否新建？");
-//		if (getchar() == 'y')
-//		{
-//			//newfile(filename);
-//			printf("%s 文件已创建。", filename);
-//		}
-//		return;
-//	}
-//	else {
-//		//查找内容块对应的盘块号(ibnum)
-//		while (fcb[fcb_son].rfcb != -1)
-//		{
-//			if (strcmp(fcb[fcb_son].filename, filename)) {
-//				ibnum = fcb[fcb_son].filecontent;
-//				break;
-//			}
-//			else
-//				fcb_son = fcb[fcb_son].rfcb;//同级移动查找
-//		}
-//		read(ibnum);
-//		printf("%s", content);
-//		printf("\n");
-//		//close();
-//	}
-//}
+void FileManage::show(char *filename)
+{
+	//filename文件对应的盘块号
+	int ibnum;
+	//当前目录的子节点对应的fcb下标号
+	int fcb_son = fcb[fcb_cur].sFCB;
+	if (fcb_son == -1) {
+		printf("当前文件夹下没有文件，是否新建？");
+		if (getchar() == 'y')
+		{
+			newFile(filename);
+			printf("%s 文件已创建。", filename);
+		}
+		return;
+	}
+	else {
+		//查找内容块对应的盘块号(ibnum)
+		do
+		{
+			if (strcmp(fcb[fcb_son].fileName, filename) == 0) {
+				ibnum = fcb[fcb_son].fileContent;
+				break;
+			}
+			else
+				fcb_son = fcb[fcb_son].rFCB;//同级移动查找
+		} while (fcb[fcb_son].rFCB != -1);
+		read(ibnum);
+		printf("%s", content);
+		printf("\n");
+	}
+}
 
 //查找文件的fcb序列号，不存在就返回-1
 int FileManage::fcbSearch(char *filename)
