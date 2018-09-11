@@ -78,6 +78,7 @@ public:
 
 
 	//zm
+	void write(char *);
 	//void read(int);					                              //读数据
 	//void show(char* );					                          //显示文件
 	void move(char *, char * );			                          //将指定路径下的文件移动到新的路径中
