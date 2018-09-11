@@ -851,7 +851,7 @@ void FileManage::move(char *filename, char * dirname)
 	int dirflag = 0;
 	int moveflag;
 	//首先查找当前目录下是否存在此文件
-	int tempFcbNum = fcb[fcb_cur].rFCB;
+	int tempFcbNum = fcb[fcb_cur].sFCB;
 	if (tempFcbNum == -1) {
 		printf("不存在此文件，请重新输入。\n");
 		return;
