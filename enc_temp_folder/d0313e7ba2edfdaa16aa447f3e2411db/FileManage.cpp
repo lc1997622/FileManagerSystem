@@ -83,7 +83,7 @@ int FileManage::mount(char name[])
 	}
 	for (int i = 0; i < BLKNUM; i++)
 	{
-		fread(fcb[i].fileName, 1, 60, fp);	
+		fread(&fcb[i], 1, 60, fp);	
 		fread(&fcb[i].sFCB, 4, 1, fp);
 	}
 	/*getFcbArray();*/
