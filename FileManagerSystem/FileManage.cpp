@@ -8,11 +8,11 @@
 #include<vector>
 #include <algorithm>
 #include <time.h>
+#include <iomanip>
 using namespace std;
 
 /*全局变量定义*/
-char content[BLKSIZE * 10];//文件内容
-
+char content[BLKSIZE * 10];
 
 FileManage::FileManage()
 {
@@ -23,6 +23,7 @@ FileManage::FileManage()
 	fcb_min = 1;
 	fcb_emp = 1;
 	fcb_cur = 0;
+	ifmount = false;
 	string rootName = "root";
 	fcb[0].initialize();
 	strcpy_s(fcb[0].fileName, rootName.c_str());
@@ -31,8 +32,18 @@ FileManage::FileManage()
 	string curtime = getTime();
 	strcpy_s(fcb[0].fileTime, curtime.c_str());
 	dx = 1;
+	for (int i = 0; i < BLKNUM / 8; i++)
+	{
+		for (int j = 0; j < 8; j++)
+		{
+			bitmap[8 * i + j] = false;
+		}
+	}
 	for (int i = 1; i < BLKNUM; i++)
 		fcb[i].initialize();
+	memset(layers, 1, sizeof(layers));
+	layer = 0;
+	dFlag = 0;
 }
 
 
@@ -55,6 +66,9 @@ int FileManage::create(char name[])
 int FileManage::mount(char name[])
 {
 	char Map[32768];
+	//zm add
+	strcpy(sysname, "d:\\");
+	strcat(sysname, name);
 	string symPath = "D:/";
 	symPath += name;
 	strcpy(systemName, name);
@@ -69,23 +83,44 @@ int FileManage::mount(char name[])
 		return 0;
 	}
 	fseek(fp, 0,SEEK_SET);
-	fread(&fcbnum,4, 1, fp);
-	fseek(fp, 4096, SEEK_SET);
-	fread(Map, 1, BLKNUM/8 ,fp);
-
-
-	for (int i = 0; i < BLKNUM / 8; i++)
+	fread(&ifmount, sizeof(bool), 1, fp);
+	
+	if (ifmount == false)
 	{
-		for(int j=0; j < 8; j++)
+		ifmount = true;
+	}
+	else
+	{
+		fread(&fcbnum, 4, 1, fp);
+		fread(&fcb_min, 4, 1, fp);
+		fread(&fcb_emp, 4, 1, fp);
+		fread(&fcb_cur, 4, 1, fp);
+		fseek(fp, 4096, SEEK_SET);
+		fread(Map, 1, BLKNUM / 8, fp);
+		for (int i = 0; i < BLKNUM / 8; i++)
 		{
-			bitmap[8 * i + j] = (Map[i] & (1 << j)) / (1 << j);
+			for (int j = 0; j < 8; j++)
+			{
+				bitmap[8 * i + j] = (Map[i] & (1 << j)) / (1 << j);
+			}
 		}
-	}
-	for (int i = 0; i < BLKNUM; i++)
-	{
-		fread(fcb[i].fileName, 1, 60, fp);	
-		fread(&fcb[i].sFCB, 4, 1, fp);
-	}
+		for (int i = 0; i < BLKNUM; i++)
+		{
+			fread(fcb[i].fileName, 1, 14, fp);
+			fread(&fcb[i].fileSize, 4, 1, fp);
+			fread(&fcb[i].fileType, sizeof(bool), 1, fp);
+			fread(&fcb[i].fileTime, 1, 20, fp);
+			fread(&fcb[i].delFlag, sizeof(bool), 1, fp);
+			fread(&fcb[i].FCBNum, 4, 1, fp);
+			fread(&fcb[i].fileContent, 4, 1, fp);
+			fread(&fcb[i].fFCB, 4, 1, fp);
+			fread(&fcb[i].lFCB, 4, 1, fp);
+			fread(&fcb[i].rFCB, 4, 1, fp);
+			fread(&fcb[i].sFCB, 4, 1, fp);
+		}
+	}	
+	fclose(fp);
+	return 1;
 	/*getFcbArray();*/
 }
 //需加上对fcb的重新写入
@@ -96,7 +131,12 @@ int FileManage::close()
 	symPath += systemName;
 	fp = fopen(symPath.c_str(), "r+");
 	fseek(fp, 0, SEEK_SET);
+	fwrite(&ifmount, sizeof(bool), 1, fp);
 	fwrite(&fcbnum, sizeof(int), 1, fp);
+	
+	fwrite(&fcb_min, 4, 1, fp);
+	fwrite(&fcb_emp, 4, 1, fp);
+	fwrite(&fcb_cur, 4, 1, fp);
 	fseek(fp, 4096, SEEK_SET);
 
 	for (int i = 0; i < BLKNUM / 8; i++)
@@ -112,7 +152,16 @@ int FileManage::close()
 
 	//开始写入fcb的值
 	for (int i = 0; i < BLKNUM; i++) {
-		fwrite(&fcb[i], 1, 64, fp);
+		fwrite(fcb[i].fileName, 1, 14, fp);
+		fwrite(&fcb[i].fileSize, 4, 1, fp);
+		fwrite(&fcb[i].fileType, sizeof(bool), 1, fp);
+		fwrite(&fcb[i].fileTime, 1, 20, fp);
+		fwrite(&fcb[i].delFlag, sizeof(bool), 1, fp);
+		fwrite(&fcb[i].FCBNum, 4, 1, fp);
+		fwrite(&fcb[i].fileContent, 4, 1, fp);
+		fwrite(&fcb[i].fFCB, 4, 1, fp);
+		fwrite(&fcb[i].lFCB, 4, 1, fp);
+		fwrite(&fcb[i].rFCB, 4, 1, fp);
 		fwrite(&fcb[i].sFCB, 4, 1, fp);
 	}
 	fclose(fp);
@@ -277,7 +326,7 @@ int FileManage::cal_dx(int curfcb) {
 	int i;
 	do
 	{
-		for (i = fcb_min + 1; i < BLKNUM; i++) {
+		for (i = fcb_min; i < BLKNUM; i++) {
 			if (fcb[i].FCBNum == -1 || fcb[i].delFlag == true) {
 				fcb_min = i;
 				break;
@@ -297,13 +346,11 @@ bool FileManage::cd(string str) {
 			cout << "你已经在根目录下" << endl;
 		}
 		else {
-			while (fcb[fcb_tmp].lFCB != -1) // 找到上一级目录的子节点
-			{
-				fcb_tmp = fcb[fcb_tmp].lFCB;
-			}
 			fcb_cur = fcb[fcb_tmp].fFCB;
 			int tmp_size = strlen(fcb[fcb_tmp].fileName);
-			curpath.erase(curpath.size() - tmp_size - 1);// 返回上一级
+			if (fcb[fcb_tmp].fFCB != 0)
+				tmp_size += 1;
+			curpath.erase(curpath.size() - tmp_size);// 返回上一级
 		}
 		return true;
 	}
@@ -361,7 +408,7 @@ bool FileManage::cd(string str) {
 						string sFileName(fcb[fcb_tmp].fileName);
 						// 找到下一级目录
 						if (strArr[i].compare(sFileName) == 0) {
-							if (fcb_flg != 0)
+							if (fcb[fcb_tmp].fFCB != 0)
 								path_tmp.append("/");
 							path_tmp.append(sFileName);
 							flag = 1;
@@ -401,7 +448,7 @@ bool FileManage::cd(string str) {
 						string sFileName(fcb[fcb_tmp].fileName);
 						// 找到下一级目录
 						if (strArr[i].compare(sFileName) == 0) {
-							if (fcb_cur != 0)
+							if (fcb[fcb_tmp].fFCB != 0)
 								path_tmp.append("/");
 							path_tmp.append(sFileName);
 							flag = 1;
@@ -436,6 +483,7 @@ bool FileManage::cd(string str) {
 
 // 当前目录(不为空)下创建文件夹
 bool FileManage::mkdir_cur_not_empty(string strArr, int cur_tmp) {
+	fcb_emp += cal_dx(cur_tmp);
 	int fcb_flg;
 	int fcb_tmp = fcb[cur_tmp].sFCB;
 	int flag = 0;
@@ -462,19 +510,20 @@ bool FileManage::mkdir_cur_not_empty(string strArr, int cur_tmp) {
 		strcpy_s(fcb[fcb_emp].fileTime, curtime.c_str());
 		fcb[fcb_emp].FCBNum = fcb_emp;
 		fcb[fcb_emp].lFCB = fcb_tmp;
+		fcb[fcb_emp].fFCB = cur_tmp;
 	}
 	// 有相同文件名
 	else {
 		tmp = fcb_tmp;
 		return false;
 	}
-	fcb_emp += cal_dx(cur_tmp);
 	fcbnum++;
 	return true;
 }
 
 // 当前目录(为空)下创建文件夹
 void FileManage::mkdir_cur_empty(string strArr, int cur_tmp) {
+	fcb_emp += cal_dx(cur_tmp);
 	fcb[cur_tmp].sFCB = fcb_emp;
 	fcb[fcb_emp].initialize();
 	strcpy_s(fcb[fcb_emp].fileName, strArr.c_str());
@@ -483,7 +532,6 @@ void FileManage::mkdir_cur_empty(string strArr, int cur_tmp) {
 	strcpy_s(fcb[fcb_emp].fileTime, curtime.c_str());
 	fcb[fcb_emp].FCBNum = fcb_emp;
 	fcb[fcb_emp].fFCB = cur_tmp;
-	fcb_emp += cal_dx(cur_tmp);
 	fcbnum++;
 }
 
@@ -563,7 +611,7 @@ int FileManage::file_size(char* filename) {
 }
 
 //创建新的文件
-bool FileManage::newFile(char filename[20]) {
+int FileManage::newFile(char filename[20]) {
 	struct FCB newFcb;
 	newFcb.initialize();
 	struct FCB fcbPre = fcb[fcb_cur];
@@ -580,6 +628,8 @@ bool FileManage::newFile(char filename[20]) {
 			break;
 		}
 	}
+
+	
 	if (fcbPre.sFCB == -1) {
 		fcb[fcb_cur].sFCB = newFcb.FCBNum;
 		newFcb.fFCB = fcb[fcb_cur].FCBNum;
@@ -592,7 +642,7 @@ bool FileManage::newFile(char filename[20]) {
 			//判断是否存在同名文件
 			if (strcmp(broFcb.fileName, newFcb.fileName) == 0) {
 				printf("该文件已存在！");
-				return false;
+				return -1;
 			}
 			if (broFcb.rFCB == -1) {
 				//找到了最后一个兄弟节点
@@ -609,7 +659,7 @@ bool FileManage::newFile(char filename[20]) {
 	newFcb.rFCB = -1;
 
 	fcb[newFcb.FCBNum] = newFcb;
-	return true;
+	return newFcb.FCBNum;
 }
 //打印目录，fcb_cur不改变
 void FileManage::showDir()
@@ -647,30 +697,72 @@ void FileManage::showAtt(char* filename)
 		currentFCB = fcb[currentFCB.sFCB];
 		do
 		{
-			flag = strcmp(filename, currentFCB.fileName);
-			if (flag == 0)//文件名匹配成功
+			int match = match_string(filename, currentFCB.fileName);
+			if (match == 0)//文件名匹配成功
 			{
 				char *str = new char[8];
 				if (currentFCB.fileType == 0)
-					strcpy(str, "文件");
+					strcpy(str, "文件  ");
 				else
 					strcpy(str, "文件夹");
-				cout << "文件名: " << currentFCB.fileName << endl;
-				cout << "文件大小: " << currentFCB.fileSize << endl;
-				cout << "文件类型: " << str << endl;
-				cout << "最后修改时间: " << currentFCB.fileTime << endl;
-				cout << "文件内容盘块号: " << currentFCB.fileContent << endl;
-				break;
+				char time[20];
+				memset(time, 0, sizeof(time));
+				int j = 0;
+				for (int i = 0; i < 4; i++)
+				{
+					time[j] = currentFCB.fileTime[i];
+					j++;
+				}
+				time[j] = '/';
+				j++;
+				for (int i = 4; i < 6; i++)
+				{
+					time[j] = currentFCB.fileTime[i];
+					j++;
+				}
+				time[j] = '/';
+				j++;
+				for (int i = 6; i < 8; i++)
+				{
+					time[j] = currentFCB.fileTime[i];
+					j++;
+				}
+				time[j] = ' ';
+				j++;
+				for (int i = 8; i < 10; i++)
+				{
+					time[j] = currentFCB.fileTime[i];
+					j++;
+				}
+				time[j] = ':';
+				j++;
+				for (int i = 10; i < 12; i++)
+				{
+					time[j] = currentFCB.fileTime[i];
+					j++;
+				}
+				time[j] = ':';
+				j++;
+				for (int i = 12; i < 14; i++)
+				{
+					time[j] = currentFCB.fileTime[i];
+					j++;
+				}
+				time[j] = '\0';
+				
+				printf("%-16s", currentFCB.fileName);
+				printf("%6d bytes      ", currentFCB.fileSize);
+				cout << str << "      ";
+				cout << time << "      ";
+				cout << currentFCB.fileContent << "      " << endl;
+				flag++;
 			}
+			if (currentFCB.rFCB != -1)
+				currentFCB = fcb[currentFCB.rFCB];
 			else
-			{
-				if (currentFCB.rFCB != -1)
-					currentFCB = fcb[currentFCB.rFCB];
-				else
-					break;
-			}
+				break;
 		} while (1);
-		if (flag != 0)
+		if (flag == 0)
 		{
 			cout << "没有找到该文件或文件夹" << endl;
 		}
@@ -681,45 +773,57 @@ void FileManage::showAtt(char* filename)
 //写入文件内容（已知filename）
 void FileManage::write(char *filename)
 {
+	int bitmapflag, blockNum;														//bitmapflag：标识bitmap起始；blocknum:需要存入的盘块数目
+	int charcount = 0;																//charcount:记录输入的长度;
 	char tmpChar;
-	//当前目录的子节点对应的fcb下标号，即孩子节点所在层级
-	int fcb_son = fcb[fcb_cur].sFCB;
+	int fcb_son = fcb[fcb_cur].sFCB;												//当前目录的子节点对应的fcb下标号，即孩子节点所在层级
 	if (fcb_son == -1) {
-		printf("当前文件夹下没有文件，是否新建？");
-		if (getchar() == 'y')
-		{
-			newFile(filename);
-			printf("已创建文件：%s。\n", filename);
-		}
+		printf("当前目录下不存在此文件，请先创建。\n");
 		return;
 	}
 	else {
 		//查找内容块对应的盘块号(ibNum)
-		do
+		for (;; fcb_son = fcb[fcb_son].rFCB)										//同级移动查找
 		{
 			if (strcmp(fcb[fcb_son].fileName, filename) == 0) {
+				if (fcb[fcb_son].fileType != 0) {
+					cout << "无法写入文件夹，请输入文件名。" << endl;
+					return;
+				}
+				if (fcb[fcb_son].fileContent != -1)									//如果原来就有内容
+				{
+					char judgeChar;
+					cout << "重新写入会覆盖原有内容，输入y/n以确认你的操作：" << endl;
+					judgeChar = getchar();
+					getchar();														//吃掉y/n后面的回车
+					if (judgeChar == 'n' || judgeChar == 'N')
+						return;
+				}
 				int count = 0, flag = 0;
 				int contentStart;
-				//若匹配，则此时fcb_son的值就是对应需要写入的fcb下标
-				printf("请输入你需要的文件大小：0~40960字节\n");
-				cin >> fcb[fcb_son].fileSize;
-				int blockNum = fcb[fcb_son].fileSize / 4096 + 1;//需要存入的盘块数目
-				printf("请输入你的内容，以#作为结束标识：\n");
+				cout << "(O_O) 请输入你的内容，并以#作为结束标识：" << endl;
+				printf("input:/>");
+				//getchar();
 				for (int i = 0; i < sizeof(content); i++)
 				{
 					tmpChar = getchar();
+					charcount++;
 					if (tmpChar == '#')
+					{
+						getchar();													//adapt to lc
+						content[i] = '\0';
 						break;
+					}
 					content[i] = tmpChar;
-					
-				}//内容存入缓冲区
-				//测试：
-				//cout << "你的输入是：" << content << endl;
-				for (int i = 4105; i < BLKNUM; i++) {
+
+				}
+				fcb[fcb_son].fileSize = charcount;
+				blockNum = fcb[fcb_son].fileSize / 4096 + 1;
+				for (int i = 0; i < BLKNUM; i++) {
 					if (bitmap[i] == false) {
 						//找到第一个为空的盘块;
 						count = 1;
-						contentStart = i;
+						bitmapflag = i, contentStart = i + 4105;
 						if (count == blockNum) {
 							flag = 1;
 							break;
@@ -741,143 +845,222 @@ void FileManage::write(char *filename)
 							break;
 						}
 					}
-
-				}//找到contentStart，将其赋给fileContent
+				}
+				//首先需要修改bitmap的值
+				for (int i = bitmapflag; i < bitmapflag + blockNum; i++)
+				{
+					bitmap[i] = true;
+				}
+				//找到contentStart（磁盘其实序号），将其赋给fileContent
 				fcb[fcb_son].fileContent = contentStart;
 				//写入内容到磁盘
-				fp = fopen(systemName, "w+");
-				//fp = fopen("d:\\zm", "w+");
-				//定位到盘块号的起始指针,这里blocknum从1开始
-				fseek(fp, contentStart*BLKSIZE, SEEK_SET);
-				fwrite(content, fcb[fcb_son].fileSize, 1, fp);
-				fclose(fp);
+
+				FILE *fpp = fopen(sysname, "r+");
+				fseek(fpp, contentStart*BLKSIZE, SEEK_SET);
+				fwrite(content, fcb[fcb_son].fileSize, 1, fpp);
+				fclose(fpp);
 				break;
 			}
-			else
-				fcb_son = fcb[fcb_son].rFCB;//同级移动查找
-		} while (fcb[fcb_son].rFCB != -1);
+			if (fcb[fcb_son].rFCB == -1)
+			{
+				cout << "当前目录下不存在此文件，请先创建。" << endl;
+				return;
+			}
+		}
 	}
 }
 
-//将盘块号为blocknum的读入content
-void FileManage::read(int blocknum)
+//将IB盘块号为blocknum的读入content
+void FileManage::read(int fcbnum, int blocknum)
 {
-	fp = fopen(systemName, "r");
+	FILE *fpp = fopen(sysname, "r");
 	//定位到盘块号的起始指针
-	fseek(fp, BLKSIZE * blocknum , SEEK_SET);
+	fseek(fpp, BLKSIZE * blocknum, SEEK_SET);
 	//将内容读取到缓冲区
-	fread(content, 1, fcb[blocknum].fileSize, fp);
-	fclose(fp);
+	fread(content, 1, fcb[fcbnum].fileSize, fpp);
+	fclose(fpp);
 }
 
 //显示文件内容
 void FileManage::show(char *filename)
 {
-	//filename文件对应的盘块号
-	int ibnum;
-	//当前目录的子节点对应的fcb下标号
-	int fcb_son = fcb[fcb_cur].sFCB;
+	int fcbFlag;													//内容块对应的fcb的序号
+	int ibnum;														//内容文件对应的盘块号									
+	int fcb_son = fcb[fcb_cur].sFCB;								//当前目录的子节点对应的fcb下标号
 	if (fcb_son == -1) {
-		printf("当前文件夹下没有文件，是否新建？");
-		if (getchar() == 'y')
-		{
-			newFile(filename);
-			printf("%s 文件已创建。", filename);
-		}
+		printf("当前目录下不存在此文件，请先创建。\n");
 		return;
 	}
 	else {
 		//查找内容块对应的盘块号(ibnum)
-		do
+		for (;; fcb_son = fcb[fcb_son].rFCB)//同级移动查找
 		{
+			fcbFlag = fcb_son;
 			if (strcmp(fcb[fcb_son].fileName, filename) == 0) {
+				if (fcb[fcb_son].fileType != 0) {
+					cout << "无法读取文件夹，请输入文件名。" << endl;
+					return;
+				}
+				if (fcb[fcb_son].fileContent == -1)
+				{
+					cout << "文件内容为空，请先写入内容。" << endl;
+					return;
+				}
 				ibnum = fcb[fcb_son].fileContent;
 				break;
 			}
-			else
-				fcb_son = fcb[fcb_son].rFCB;//同级移动查找
-		} while (fcb[fcb_son].rFCB != -1);
-		read(ibnum);
-		printf("%s", content);
+			//退出条件：
+			if (fcb[fcb_son].rFCB == -1)
+			{
+				cout << "当前目录下不存在此文件，请先创建。" << endl;
+				return;
+			}
+		}
+		read(fcbFlag, ibnum);
+		cout << content << endl;
+	}
+}
+
+//查看当前文件所占的盘块号
+void FileManage::map(char *filename)
+{
+	int fcbFlag, blocknum;											//内容块对应的fcb的序号
+	int ibnum;														//内容文件对应的盘块号									
+	int fcb_son = fcb[fcb_cur].sFCB;								//当前目录的子节点对应的fcb下标号
+	if (fcb_son == -1) {
+		cout << "当前目录下不存在此文件，请先创建。" << endl;
+		return;
+	}
+	else {
+		//查找内容块对应的盘块号(ibnum)
+		for (;; fcb_son = fcb[fcb_son].rFCB)//同级移动查找
+		{
+			fcbFlag = fcb_son;
+			if (strcmp(fcb[fcb_son].fileName, filename) == 0) {
+				if (fcb[fcb_son].fileType != 0) {
+					cout << "文件夹无法执行map操作，请输入文件名。" << endl;
+					return;
+				}
+				if (fcb[fcb_son].fileContent == -1) {
+					cout << "当前文件为空，未进行分配磁盘。" << endl;
+					return;
+				}
+				ibnum = fcb[fcb_son].fileContent;
+				break;
+			}
+			if (fcb[fcb_son].rFCB == -1)
+			{
+				cout << "当前目录下不存在此文件，请先创建。" << endl;
+				return;
+			}
+		}
+		//起始盘块号 ：ibnum，fcb[fcbFlag].fileSize 就是所占几个盘块号 
+		cout << fcb[fcbFlag].fileName << " 所占内容块的盘块号: " << endl;
+		blocknum = fcb[fcbFlag].fileSize / 4096 + 1;
+		for (int i = 0; i < blocknum; i++)
+		{
+			printf("%d ", ibnum++);
+		}
 		printf("\n");
 	}
 }
 
-//查找文件的fcb序列号，不存在就返回-1
+//查找文件、文件夹的fcb序列号，不存在就返回-1
 int FileManage::fcbSearch(char *filename)
 {
 	int columnFcbNum = fcb[0].sFCB;
+	//cout << "第一个columnFcbNum: "<<columnFcbNum << endl;
 	if (columnFcbNum == -1)
 		return -1;//不存在
 	else
 	{
-		do
+		//bfs查找
+		for (;; columnFcbNum = fcb[columnFcbNum].sFCB)
 		{
 			int rowFcbNum = columnFcbNum;
-			do
+			for (;; rowFcbNum = fcb[rowFcbNum].rFCB)
 			{
-				if (fcb[rowFcbNum].fileName == filename)
+				//cout << fcb[rowFcbNum].fileName << endl;
+				if (strcmp(fcb[rowFcbNum].fileName, filename) == 0)
+				{
+					//cout << "目录的fcb下标是： " << rowFcbNum << endl;
 					return rowFcbNum;
-				else
-					rowFcbNum = fcb[rowFcbNum].rFCB;
-			} while (fcb[rowFcbNum].rFCB == -1);
-			columnFcbNum = fcb[columnFcbNum].sFCB;
-		} while (fcb[columnFcbNum].sFCB == -1);
+				}
+				if (fcb[rowFcbNum].rFCB == -1)
+					break;
+			}
+			if (fcb[columnFcbNum].sFCB == -1)
+				break;
+		}
 		return -1;//不存在
 	}
 }
 
-//将指定路径下的文件移动到新的路径中
-void FileManage::move(char *filename, char * dirname)
+//将当前路径下的文件移动到新的路径中
+void FileManage::move(char *filename, char *dirname)
 {
-	int fileflag = 0;
+	int fileflag = -1;
 	int dirflag = 0;
 	int moveflag;
-	//首先查找当前目录下是否存在此文件
+	//首先查找当前目录下是否存在此文件,tempFcbNum（fileflag）是需要移动的文件fcb下标
 	int tempFcbNum = fcb[fcb_cur].sFCB;
 	if (tempFcbNum == -1) {
-		printf("不存在此文件，请重新输入。\n");
+		printf("当前目录为空，请重新操作。\n");
 		return;
 	}
-	do
+	for (;; tempFcbNum = fcb[tempFcbNum].rFCB)
 	{
-		if (fcb[tempFcbNum].fileName == filename)
+		//cout << "当前文件名：" << fcb[tempFcbNum].fileName << endl;
+		if (strcmp(fcb[tempFcbNum].fileName, filename) == 0)
 		{
 			fileflag = tempFcbNum;
 			break;//存在文件就退出循环
 		}
-		else
+		if (fcb[tempFcbNum].rFCB == -1)
 		{
-			tempFcbNum = fcb[tempFcbNum].rFCB;
+			printf("不存在此文件，请重新输入。\n");
+			return;
 		}
-	} while (fcb[tempFcbNum].rFCB == -1);
-	if (fileflag = 0) {
-		printf("不存在此文件，请重新输入。\n");
+	}
+	//fileflag是要移动的文件的fcb号，dirflag是目录的fcb号
+	dirflag = fcbSearch(dirname);
+	if (dirflag == -1)
+	{
+		printf("不存在该目录，请新建或重新输入。\n");
 		return;
 	}
 	else
 	{
-		//fileflag是要移动的文件的fcb号，dirflag是目录的fcb号
-		dirflag = fcbSearch(dirname);
-		if (dirflag == -1)
+		//首先得修改原有fileflag文件的父元素的sFCB成另一个,得有三种情况的位置判断
+		if (fcb[fileflag].lFCB == -1)							//当前层最左元素
 		{
-			printf("不存在该目录，请新建或重新输入。\n");
-			return;
+			int ffcbnum = fcb[fileflag].fFCB;
+			int rfcbnum = fcb[fileflag].rFCB;
+			fcb[ffcbnum].sFCB = rfcbnum;
+			fcb[rfcbnum].lFCB = -1;
+		}
+		else if (fcb[fileflag].rFCB == -1)						//当前层最右元素
+		{
+			int lfcbnum = fcb[fileflag].lFCB;
+			fcb[lfcbnum].rFCB = -1;
 		}
 		else
 		{
-			if (fcb[dirflag].sFCB == -1)//目录下没有文件
-			{
-				fcb[fileflag].fFCB = dirflag;
-				fcb[fileflag].lFCB = -1;
-				fcb[fileflag].rFCB = -1;
-				fcb[dirflag].sFCB = fileflag;
-				return;
-			}
-			//目录下有文件
+			int lfcbnum = fcb[fileflag].lFCB;					//当前层中间元素
+			int rfcbnum = fcb[fileflag].rFCB;
+			fcb[lfcbnum].rFCB = rfcbnum;
+			fcb[rfcbnum].lFCB = lfcbnum;
+		}
+		if (fcb[dirflag].sFCB == -1)							//所移到的目录下没有文件
+		{
+			fcb[fileflag].fFCB = dirflag;
+			fcb[fileflag].lFCB = -1;
+			fcb[fileflag].rFCB = -1;
+			fcb[dirflag].sFCB = fileflag;
+		}
+		else {													//目录下有文件
 			moveflag = fcb[dirflag].sFCB;
-			//移动moveflag直到右兄弟是空
-			while (fcb[moveflag].rFCB != -1)
+			while (fcb[moveflag].rFCB != -1)					//移动moveflag直到右兄弟是空
 			{
 				moveflag = fcb[moveflag].rFCB;
 			}
@@ -885,114 +1068,264 @@ void FileManage::move(char *filename, char * dirname)
 			fcb[fileflag].lFCB = moveflag;
 			fcb[fileflag].rFCB = -1;
 			fcb[moveflag].rFCB = fileflag;
-			return;
 		}
+		cout << "移动成功！" << endl;
+		return;
 	}
 }
 
 
 //删除文件，fcb_cur改变为被删除文件的父节点
+
+bool FileManage::match_string(const char* str, const char* strpattern)
+{
+	int nStr = strlen(str);
+	int nPatt = strlen(strpattern);
+	int** pTable = new int*[nStr + 1];
+	for (int k = 0; k <= nStr; k++) {
+		pTable[k] = new int[nPatt + 1];
+		memset(pTable[k], 0, (nPatt + 1) * sizeof(int));
+	}
+
+	if (strpattern[0] == '*')
+	{
+		for (int i = 0; i <= nPatt; ++i)
+		{
+			pTable[0][i] = 1;
+		}
+	}
+	pTable[0][0] = 1;
+
+	for (int j = 1; j <= nPatt; ++j)
+	{
+		for (int i = 1; i <= nStr; ++i)
+		{
+			if ((strpattern[j - 1] == '?' && str[i - 1] != '\0') || strpattern[j - 1] == str[i - 1]) {
+				pTable[i][j] = pTable[i - 1][j - 1];
+			}
+			else if (strpattern[j - 1] == '*') {
+				if (pTable[i][j - 1] == 1 || pTable[i - 1][j] == 1 || pTable[i - 1][j - 1] == 1)
+					pTable[i][j] = 1;
+			}
+		}
+	}
+
+	bool ret = (pTable[nStr][nPatt] == 1 ? true : false);
+	for (int k = 0; k <= nStr; k++)
+		delete[] pTable[k];
+	delete pTable;
+
+	return ret;
+}
 bool FileManage::delFile(char* filename)
 {
-	char flag;
-	int cur = fcb_cur;
-	if (cd(filename) == 0)
-		return 0;
-	struct FCB *currentFCB = &fcb[fcb_cur];//被删除文件
-	fcb_cur = fcb[currentFCB->fFCB].FCBNum;//fcb_cur为当前文件的父节点
-	
-again:
-	cout << "确认删除" << filename << "[y,n]?";
-	cin >> flag;
-	if (flag == 'n' || flag == 'N')//确认不删除
-		return 0;
-	else if (flag == 'y' || flag == 'Y')//确认删除
+	int cur = fcb_cur;//记录当前目录
+	char command;// "y" or "n"
+	int check = 0;//是否有路径
+	int len = strlen(filename);
+	char path[100];//路径
+	string file;//被删除文件名
+	for (int i = len - 1; i >= 0; i--)
 	{
-		currentFCB->fFCB = -1;
-		//改变FCB连接
-		if (currentFCB->lFCB != -1)//不是该层第一个节点
+		if (filename[i] == '/')
 		{
-			struct FCB *leftFCB = &fcb[currentFCB->lFCB];
-			if (currentFCB->rFCB != -1)//不是该层最后一个节点
-			{
-				struct FCB *rightFCB = &fcb[currentFCB->rFCB];
-				leftFCB->rFCB = rightFCB->FCBNum;
-				rightFCB->lFCB = leftFCB->FCBNum;
-			}
-			else//该层最后一个节点
-			{
-				leftFCB->rFCB = -1;
-			}
+			len = i + 1;
+			file = filename;
+			strncpy(path, filename, len - 1);
+			file = file.substr(len);
+			//cout << path << endl;
+			//cout << file.c_str() << endl;
+			path[len - 1] = '\0';
+			if (cd(path) == 0)
+				return 0;
+			check = 1;
+			break;
 		}
-		else//该层第一个节点
-		{
-			if (currentFCB->rFCB != -1)//不是该层最后一个节点
+	}
+	if (check == 0)
+	{
+		file = filename;
+		//cout << file.c_str() << endl;
+	}
+	struct FCB *currentFCB;
+	struct FCB *fatherFCB = &fcb[fcb_cur];//被删除文件的父节点
+
+	if (fatherFCB->sFCB != -1)
+	{
+		currentFCB = &fcb[fatherFCB->sFCB];
+		do {
+			if (match_string(currentFCB->fileName, file.c_str()))
 			{
-				struct FCB *rightFCB = &fcb[currentFCB->rFCB];
-				fcb[fcb_cur].sFCB = rightFCB->FCBNum;
-				rightFCB->lFCB = -1;
-			}
-			else//该层最后一个节点
-			{
-				fcb[fcb_cur].sFCB = -1;
-			}
-		}
-		//改变FCB删除标记、盘块删除标记
-		if (currentFCB->fileType == 0)//删除的为单个文件
-		{
-			currentFCB->delFlag = 1;
-			fcbnum--;
-			int blockNum = 0;
-			blockNum = ceil(currentFCB->fileSize / BLKSIZE);
-			for (int i = currentFCB->FCBNum; i < blockNum; i++)
-				bitmap[i] = 0;
-			if (currentFCB->FCBNum < delMin)
-				delMin = currentFCB->FCBNum;
-			while (fcb_cur != cur)
-				cd("..");
-			return 1;
-		}
-		else//删除一个文件夹
-		{
-			currentFCB->delFlag = 1;
-			fcbnum--;
-			if (currentFCB->FCBNum < delMin)
-				delMin = currentFCB->FCBNum;
-			if (currentFCB->sFCB != -1)//子节点不为空
-			{
-				currentFCB = &fcb[currentFCB->sFCB];
-				do
+				dFlag++;
+				currentFCB->fFCB = -1;
+				//改变FCB连接
+				if (currentFCB->lFCB != -1)//不是该层第一个节点
+				{
+					struct FCB *leftFCB = &fcb[currentFCB->lFCB];
+					if (currentFCB->rFCB != -1)//不是该层最后一个节点
+					{
+						struct FCB *rightFCB = &fcb[currentFCB->rFCB];
+						leftFCB->rFCB = rightFCB->FCBNum;
+						rightFCB->lFCB = leftFCB->FCBNum;
+					}
+					else//该层最后一个节点
+					{
+						leftFCB->rFCB = -1;
+					}
+				}
+				else//该层第一个节点
+				{
+					if (currentFCB->rFCB != -1)//不是该层最后一个节点
+					{
+						struct FCB *rightFCB = &fcb[currentFCB->rFCB];
+						fcb[fcb_cur].sFCB = rightFCB->FCBNum;
+						rightFCB->lFCB = -1;
+					}
+					else//该层最后一个节点
+					{
+						fcb[fcb_cur].sFCB = -1;
+					}
+				}
+				//改变FCB删除标记、盘块删除标记
+				if (currentFCB->fileType == 0)//删除的为单个文件
+				{
+					currentFCB->delFlag = 1;
+					fcbnum--;
+					int blockNum = 0;
+					blockNum = ceil(currentFCB->fileSize / BLKSIZE);
+					for (int i = currentFCB->FCBNum; i < blockNum; i++)
+						bitmap[i] = 0;
+					if (currentFCB->FCBNum < delMin)
+						delMin = currentFCB->FCBNum;
+					while (fcb_cur != cur)
+						cd("..");
+				}
+				else//删除一个文件夹
 				{
 					currentFCB->delFlag = 1;
 					fcbnum--;
 					if (currentFCB->FCBNum < delMin)
 						delMin = currentFCB->FCBNum;
-					if (!delFile(currentFCB->fileName))
+					if (currentFCB->sFCB != -1)//子节点不为空
 					{
-						cout << "删除文件" << currentFCB->fileName << "不成功" << endl;
+						currentFCB = &fcb[currentFCB->sFCB];
+						do
+						{
+							currentFCB->delFlag = 1;
+							fcbnum--;
+							if (currentFCB->FCBNum < delMin)
+								delMin = currentFCB->FCBNum;
+							if (!delFile(currentFCB->fileName))
+							{
+								cout << "删除文件" << currentFCB->fileName << "不成功" << endl;
+							}
+							if (currentFCB->rFCB != -1)
+								currentFCB = &fcb[currentFCB->rFCB];
+							else
+								break;
+						} while (1);
+						while (fcb_cur != cur)
+							cd("..");
 					}
-					if (currentFCB->rFCB != -1)
-						currentFCB = &fcb[currentFCB->rFCB];
-					else
-						break;
-				} while (1);
-				while (fcb_cur != cur)
-					cd("..");
-				return 1;
+					else//子节点为空
+					{
+						while (fcb_cur != cur)
+							cd("..");
+					}
+				}
 			}
-			else//子节点为空
-			{
-				while (fcb_cur != cur)
-					cd("..");
-				return 1;
-			}
-		}
+			if (currentFCB->rFCB != -1)
+				currentFCB = &fcb[currentFCB->rFCB];
+			else
+				break;
+		} while (1);
+		if (dFlag != 0)
+			return 1;
+		else
+			return 0;
 	}
-	else//输入有误
+	else
 	{
-		goto again;
+		return 0;
 	}
+}
 
+//遍历该文件夹下所有文件
+void FileManage::tree()
+{
+	const char *ch1 = "│", *ch2 = "└──", *ch3 = "├──";
+	struct FCB currentFCB = fcb[fcb_cur];
+	do
+	{
+		if (layer >= 2)
+		{
+			if (fcb[currentFCB.fFCB].rFCB == -1)
+				layers[layer - 2] = 0;
+			else
+				layers[layer - 2] = 1;
+		}
+
+		for (int i = 0; i < layer; i++)
+		{
+			if (i == layer - 1)
+			{
+				if (currentFCB.rFCB == -1)
+				{
+					cout << ch2;
+				}
+				else
+					cout << ch3;
+			}
+			else if (layers[i])
+				cout << ch1 << "  ";
+			else
+				cout << "   ";
+		}
+		cout << currentFCB.fileName << endl;
+
+		if (currentFCB.sFCB != -1)
+		{
+			currentFCB = fcb[currentFCB.sFCB];
+			cd(currentFCB.fileName);
+			layer++;
+			tree();
+			layer--;
+			currentFCB = fcb[fcb_cur];
+		}
+		else
+		{
+			//cout << "该目录下没有文件或文件夹" << endl;
+		}
+		if (currentFCB.rFCB != -1 && layer > 0)
+		{
+			currentFCB = fcb[currentFCB.rFCB];
+			cd("..");
+			cd(currentFCB.fileName);
+		}
+		else//对该层最后一个节点进行处理
+		{
+			if (layer == 0)
+				break;
+			/*if (currentFCB.sFCB != -1)
+			{
+				currentFCB = fcb[currentFCB.sFCB];
+				cd(currentFCB.fileName);
+				layer++;
+				tree();
+				layer--;
+				currentFCB = fcb[fcb_cur];
+			}
+			else
+			{
+				cd("..");
+				currentFCB = fcb[fcb_cur];
+				return;
+			}*/
+			cd("..");
+			currentFCB = fcb[fcb_cur];
+			break;
+		}
+	} while (1);
 }
 //获取文件在磁盘中所占用的所有的盘块
 //void FileManage::getMap(string str) {
@@ -1014,3 +1347,401 @@ again:
 //		printf("该文件不存在");
 //	}
 //}
+
+int FileManage::judge_exist(string filename) {
+	struct FCB father = fcb[fcb_cur];//获取当前父节点的fcb
+	if (father.sFCB == -1) {
+		//该目录下没有子节点
+		return -1;
+	}
+	else {
+		struct FCB broFcb = fcb[father.sFCB];//获取第一个儿子节点
+		while (1) {
+			if (strcmp(broFcb.fileName, filename.c_str()) == 0) {
+				//两个名字相同
+				return broFcb.FCBNum;//返货该节点的fcb序号
+			}
+			else {
+				if (broFcb.rFCB == -1) break;//到了最后一个fcb节点
+			}
+
+			broFcb = fcb[broFcb.rFCB];
+		}
+	}
+	return -1;
+
+}
+
+bool FileManage::copy(string filename1, string filename2) {
+	string first;
+	string second;
+	first = filename1.substr(0, 1);//获取首字母
+	second = filename2.substr(0, 1);
+
+	if (first == "D" || first == "C" || first == "E") {
+		//第一个文件名是windows系统下的文件名
+		int flag = judge_exist(filename2);
+		if (flag != -1) {
+			printf("在当前目录下该文件已存在，如果要覆盖当前文件请输入y,不覆盖输入n\n");
+			char command;
+			cin >> command;
+			if (command == 'y') {
+				//用户选择覆盖
+				char c[14]="";
+				strcpy(c, filename1.c_str());
+				int sum = file_size(c);//获取文件的大小
+				struct FCB prefcb = fcb[flag];//获取要覆盖的fcb
+				int preSize = prefcb.fileSize;//获取要覆盖的fcb的大小
+				int preBitMapstart = prefcb.fileContent;//获取要覆盖的fcb的文件内容起始序号
+				int countpre = (preSize / 4096) + 1;//获取文件内容块的数量
+				if (preSize > 0) {
+					for (int i = preBitMapstart; i < countpre; i++) {
+						bitmap[i] = false;//将位视图被占用的地方重新至为false
+					}
+				}
+
+				int count = (sum / 4096) + 1;//获取现在该文件索要占的盘块数
+
+				int f = 0;
+				int nowcount = 0;
+				int i;
+				for (i = 0; i < BLKNUM; i++) {
+					if (bitmap[i] == false) {
+						nowcount++;
+						if (nowcount == count) {
+							f = 1;
+							break;
+						}
+						for (int j = 1; j < count; j++) {
+							if (bitmap[j + i] != false) {
+								break;
+							}
+							else {
+								nowcount++;
+							}
+						}
+						if (nowcount == count ) {
+							f = 1;
+							break;
+						}
+						else {
+							nowcount = 0;
+						}
+					}
+				}
+
+				if (f == 0) {
+					printf("空间不足");
+					return false;
+				}
+				else {
+					fcb[flag].fileContent = i+4105;//给找到的第一文件内容块赋值
+					fcb[flag].fileSize = sum;
+					for (int j = 0; j < count; j++) {
+						bitmap[j + i] = true;
+					}
+					//开始写入数据
+					char temp[4096];
+					int remaining = sum;
+					FILE *fp = fopen(c, "r");//读取文件
+					FILE *fw = fopen(sysname, "w+");//打开系统文件
+					for (int j = 0; j < count; j++) {
+						if (remaining >= 4096) {
+							fread(temp, 1, 4096, fp);//将4096个字符读入内存
+							fseek(fw, (9 + i + j + 4096) * 4096, SEEK_SET);//偏移到当前盘块
+							fwrite(temp,  4096,1, fw);//将内容写入
+							remaining -= 4096;
+						}
+						else {
+							fread(temp, 1, remaining, fp);//将4096个字符读入内存
+							fseek(fw, (9 + i + j + 4096) * 4096, SEEK_SET);//偏移到当前盘块
+							fwrite(temp,  remaining, 1,fw);//将内容写入
+							remaining -= remaining;
+						}
+
+					}
+					fclose(fp);
+					fclose(fw);
+					return true;
+				}
+
+
+			}
+			else {
+				return false;
+			}
+		}
+		else {
+			//说明在当前目录下该文件不存在
+			char h[14]="";
+			strcpy(h, filename2.c_str());
+			int newFcbNum = newFile(h);
+			char c[14]="";
+			strcpy(c, filename1.c_str());
+			int sum = file_size(c);//获取文件的大小
+			int count = (sum / 4096) + 1;//获取现在该文件索要占的盘块数
+
+			int f = 0;
+			int nowcount = 0;
+			int i;
+			for (i = 0; i < BLKNUM; i++) {
+				if (bitmap[i] == false) {
+					nowcount++;
+					if (nowcount == count ) {
+						f = 1;
+						break;
+					}
+					for (int j = 1; j < count; j++) {
+						if (bitmap[j + i] != false) {
+							break;
+						}
+						else {
+							nowcount++;
+						}
+					}
+					if (nowcount == count ) {
+						f = 1;
+						break;
+					}
+					else {
+						nowcount = 0;
+					}
+				}
+			}
+			if (f == 0) {
+				printf("空间不足");
+				return false;
+			}
+			else {
+				fcb[newFcbNum].fileContent = i+4105;//给找到的第一文件内容块赋值
+				fcb[newFcbNum].fileSize = sum;
+				for (int j = 0; j < count; j++) {
+					bitmap[j + i] = true;
+				}
+
+
+				//开始写入数据
+				char temp[4096];
+				int remaining = sum;
+				FILE *fp = fopen(c, "r");//读取文件
+				FILE *fw = fopen(sysname, "w+");//打开系统文件
+				for (int j = 0; j < count; j++) {
+					if (remaining >= 4096) {
+						fread(temp, 1, 4096, fp);//将4096个字符读入内存
+						fseek(fw, (9 + i + j+4096)*4096, SEEK_SET);//偏移到当前盘块
+						fwrite(temp, 4096, 1,fw);//将内容写入
+						remaining -= 4096;
+					}
+					else {
+						fread(temp, 1, remaining, fp);//将4096个字符读入内存
+						fseek(fw,( 9 + i + j + 4096)*4096 , SEEK_SET);//偏移到当前盘块
+						fwrite(temp, remaining, 1,fw);//将内容写入
+						remaining -= remaining;
+					}
+
+				}
+				fclose(fp);
+				fclose(fw);
+				return true;
+			}
+
+		}
+	}
+	else if (second == "D" || second == "C" || second == "E") {
+		//第二个文件名是windows系统下的文件名
+		int flag = judge_exist(filename1);
+		if (flag == -1) {
+			printf("被复制的该文件不存在");
+			return false;
+		}
+		else {
+			//被复制的这个文件存在
+			char y[14]="";
+			strcpy(y, filename2.c_str());
+			struct FCB firstFcb = fcb[flag];//获取被复制文件的fcb
+			int firstSize = firstFcb.fileSize;//获取被复制文件的大小
+			int count = (firstSize / 4096) + 1;
+			int firstStartContent = firstFcb.fileContent;
+			char temp[4096];
+			int remaining = firstSize;
+			FILE *fw = fopen(y, "w+");
+			FILE *fp = fopen(sysname, "r");//以只读的形式打开当前系统文件
+			for (int i = 0; i < count; i++) {
+				if (remaining >= 4096) {
+					fseek(fp, 4096 * (i + firstStartContent), SEEK_SET);
+					fread(temp, 1, 4096, fp);
+					fwrite(temp, 1, 4096, fw);
+					remaining -= 4096;
+				}
+				else {
+					fseek(fp, 4096 * (i + firstStartContent), SEEK_SET);
+					fread(temp, 1, remaining, fp);
+					fwrite(temp, 1, remaining, fw);
+					remaining -= remaining;
+				}
+			}
+			fclose(fp);
+			fclose(fw);
+			return true;
+		}
+	}
+	else {
+		//两个文件都是该系统下的
+
+		int flag1 = judge_exist(filename1);
+		int flag2 = judge_exist(filename2);
+		if (flag1 == -1) {
+			printf("被复制的文件不存在");
+			return false;
+		}
+		else {
+			//被复制的文件存在
+			if (flag2 != -1) {
+				//复制到的文件存在
+				printf("该文件已存在，是否覆盖？覆盖的话输入y,不覆盖的话输入n\n");
+				char  command;
+				cin >> command;
+				if (command == 'y') {
+					struct FCB firstFile = fcb[flag1];//获取第一个文件的fcb
+					struct FCB secondFile = fcb[flag2];//获取第二个文件的fcb
+					int count = 0;
+					if (secondFile.fileSize > 0) {
+						count = (secondFile.fileSize / 4096) + 1;
+						for (int j = secondFile.fileContent; j < count + secondFile.fileContent; j++) {
+							bitmap[j] = false;
+						}
+					}
+	
+					count = (firstFile.fileSize / 4096) + 1;
+					int i;
+					int newcount = 0;
+					for (i = 0; i < BLKNUM; i++) {
+						if (bitmap[i] == false) {
+							newcount++;
+							if (newcount == count) {
+								break;
+							}
+							for (int j = 1; j < count; j++) {
+								if (bitmap[i + j] == false) {
+									newcount++;
+								}
+								else {
+									break;
+								}
+							}
+							if (newcount == count) {
+								break;
+							}
+							else {
+								newcount = 0;
+							}
+						}
+					}
+
+					for (int j = 0; j < count; j++) {
+						bitmap[j + i] = true;
+					}
+					fcb[flag2].fileSize = fcb[flag1].fileSize;
+					fcb[flag2].fileContent = i+4105;
+					secondFile.fileContent = i+4105;
+
+					char temp[4096]="";
+					FILE *fp = fopen(sysname, "r+");
+					int remaining = fcb[flag1].fileSize;
+					for (int j = 0; j < count; j++) {
+						if (remaining >= 4096) {
+							fseek(fp, (j + firstFile.fileContent) * 4096, SEEK_SET);
+							fread(temp, 1, 4096, fp);
+							fseek(fp, (j + secondFile.fileContent ) * 4096, SEEK_SET);
+							fwrite(temp, 1, 4096, fp);
+							remaining -= 4096;
+						}
+						else {
+							fseek(fp, (j + firstFile.fileContent) * 4096, SEEK_SET);
+							fread(temp, 1, remaining, fp);
+							fseek(fp, (j + secondFile.fileContent ) * 4096, SEEK_SET);
+							fwrite(temp, 1, remaining, fp);
+							remaining -= remaining;
+						}
+					}
+
+					fclose(fp);
+					return true;
+				}
+				else {
+					return false;
+				}
+
+			}
+			//复制到文件不存在
+			else {
+
+				char c[14]="";
+				strcpy(c, filename2.c_str());
+				flag2 = newFile(c);
+				struct FCB firstFile = fcb[flag1];//获取第一个文件的fcb
+				struct FCB secondFile = fcb[flag2];//获取第二个文件的fcb
+				int firstSize = fcb[flag1].fileSize;
+				int count = (firstSize / 4096) + 1;
+				int i;
+				int newcount = 0;
+				for (i = 0; i < BLKNUM; i++) {
+					if (bitmap[i] == false) {
+						newcount++;
+						if (newcount == count) {
+							break;
+						}
+						for (int j = 1; j < count; j++) {
+							if (bitmap[i + j] == false) {
+								newcount++;
+							}
+							else {
+								break;
+							}
+						}
+						if (newcount == count) {
+							break;
+						}
+						else {
+							newcount = 0;
+						}
+					}
+				}
+				for (int j = 0; j < count; j++) {
+					bitmap[j + i] = true;
+				}
+
+				fcb[flag2].fileSize = fcb[flag1].fileSize;
+				fcb[flag2].fileContent = i+4105;
+				secondFile.fileContent = i+4105;
+
+				char temp[4096]="";
+				FILE *fp = fopen(sysname, "r+");
+				int remaining = fcb[flag1].fileSize;
+				for (int j = 0; j < count; j++) {
+					if (remaining >= 4096) {
+						fseek(fp, ( j + firstFile.fileContent) * 4096, SEEK_SET);
+						fread(temp, 1, 4096, fp);
+						fseek(fp, (j + secondFile.fileContent) * 4096, SEEK_SET);
+						fwrite(temp, 1, 4096, fp);
+						remaining -= 4096;
+					}
+					else {
+						fseek(fp, (j + firstFile.fileContent)*4096, SEEK_SET);
+						fread(temp, 1, remaining, fp);
+						fseek(fp, (j + secondFile.fileContent)* 4096, SEEK_SET);
+						fwrite(temp, remaining,1, fp);
+						remaining -= remaining;
+					}
+				}
+
+				fclose(fp);
+				return true;
+			}
+		}
+
+
+
+	}
+	return false;
+}

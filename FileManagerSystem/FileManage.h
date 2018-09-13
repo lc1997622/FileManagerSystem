@@ -7,11 +7,12 @@
 #include<fstream>
 #include<vector>
 #include <algorithm>
+#include <algorithm>
 using namespace std;
 
 #define BLKSIZE 4096                 //每个盘块的大小
 #define BLKNUM 262144                //盘块的数量
-#define DISKSIZE 1073741824/64       //整个磁盘空间的字节数
+#define DISKSIZE 1073741824		 //整个磁盘空间的字节数
 #define FCBSTART 36864               //FCB的起始盘块前的字节数
 #define FCBSTART 36864               //FCB的起始盘块前的字节数
 #define CONTENTSTART  16814080       //文件内容盘块前的字节数
@@ -58,7 +59,9 @@ public:
 	bool delFile(char*);
 	char * baseAddr;
 	int blockSize;
+	bool ifmount;                                                 //空间安装标记
 	FILE *fp;
+	char sysname[20];
 	char systemName[20];
 	int fcb_cur;                                                  //当前目录
 	bool bitmap[BLKNUM];                                          //位视图，0~4104 not care
@@ -75,19 +78,26 @@ public:
 	int dx;					//创建新文件夹时fcbnum与上一级新建文件夹间的位移量			
 	int tmp;
 	const string commands;
-
+	int layer;
+	bool layers[20];
+	void tree();
+	bool match_string(const char*, const char* );
+	int dFlag;
 
 	//zm
 	void write(char *);
-	void read(int);					                              //读数据
+	void read(int,int);					                          //读数据
 	void show(char* );					                          //显示文件
 	void move(char *, char * );			                          //将指定路径下的文件移动到新的路径中
 	int fcbSearch(char *);
+	void map(char *);
 
 	//hl
 	//void getMap(char str[20]);                                  //获取文件在磁盘中所占用的所有的盘块
-	bool newFile(char *filename);              //创建一个新的文件
+	int newFile(char *filename);              //创建一个新的文件
 	int file_size(char* filename);                                //获取文件大小
+	bool copy(string filename1, string filename2);//实现三种copy
+	int judge_exist(string filename);//根据文件名判断该文件是否存在
 
 	//zdj
 	string getTime();													// 获取系统时间
