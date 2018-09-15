@@ -3,6 +3,7 @@
 #include<string>
 #include<iostream>
 #include<stdio.h>
+#include<stdlib.h>
 #include<memory.h>
 #include<fstream>
 #include<vector>
@@ -169,7 +170,11 @@ int FileManage::close()
 }
 int FileManage::format()
 {
-	memset(&fcbnum, 0,sizeof(int));
+	memset(&ifmount, 0,sizeof(int));
+	memset(&fcbnum, 0, sizeof(int));
+	memset(&fcb_min, 0, sizeof(int));
+	memset(&fcb_emp, 0, sizeof(int));
+	memset(&fcb_cur, 0, sizeof(int));
 	memset(bitmap, 0, sizeof(bitmap));
 	memset(fcb, 0, sizeof(fcb));
 	close();
@@ -572,7 +577,7 @@ bool FileManage::mkdir(string str) {
 				}
 				else {
 					mkdir_cur_empty(strArr[i], fcb_tmp);
-					fcb_tmp = fcb_emp - dx;// 获取所要创建空文件夹的父目录的fcb块号
+					fcb_tmp = fcb_emp ;// 获取所要创建空文件夹的父目录的fcb块号
 				}
 			}
 		}
@@ -588,7 +593,7 @@ bool FileManage::mkdir(string str) {
 				else {
 					mkdir_cur_empty(strArr[i], fcb_tmp);
 				}
-				fcb_tmp = fcb_emp - dx;
+				fcb_tmp = fcb_emp ;
 			}
 		}
 	}
@@ -619,7 +624,9 @@ int FileManage::newFile(char filename[20]) {
 	
 	strcpy(newFcb.fileName, filename);
 	newFcb.fileType = false;
-	strcpy(newFcb.fileTime, "0");//之后讨论存取什么时间
+	string  time = getTime().c_str();
+	string curtime = getTime();
+	strcpy_s(newFcb.fileTime, curtime.c_str());
 	newFcb.delFlag = false;
 	for (int i = 0; i < BLKNUM; i++) {
 		if (fcb[i].delFlag == true || fcb[i].FCBNum == -1) {
@@ -674,7 +681,13 @@ void FileManage::showDir()
 		currentFCB = fcb[currentFCB.sFCB];
 		do
 		{
-			cout << currentFCB.fileName << endl;
+			char *str = new char[8];
+			if (currentFCB.fileType == 0)
+				strcpy(str, "文件  ");
+			else
+				strcpy(str, "文件夹");
+			printf("%-16s", currentFCB.fileName);
+			cout << "      " << str << endl;
 			if (currentFCB.rFCB != -1)
 				currentFCB = fcb[currentFCB.rFCB];
 			else
@@ -683,11 +696,13 @@ void FileManage::showDir()
 	}
 }
 
+
 //显示属性，fcb_cur不改变
 void FileManage::showAtt(char* filename)
 {
 	struct FCB currentFCB = fcb[fcb_cur];//该操作完成后
 	int flag = 0;
+	bool match;
 	if (currentFCB.sFCB == -1)//没有子文件
 	{
 		cout << "没有找到该文件或文件夹" << endl;
@@ -697,8 +712,14 @@ void FileManage::showAtt(char* filename)
 		currentFCB = fcb[currentFCB.sFCB];
 		do
 		{
-			int match = match_string(filename, currentFCB.fileName);
-			if (match == 0)//文件名匹配成功
+			match = 1;
+			if (strcmp(filename, currentFCB.fileName) == 0)
+				match = 1;
+			else if (strchr(filename, '*') == NULL && strchr(filename, '?') == NULL && strcmp(currentFCB.fileName, filename) != 0)
+				match = 0;
+			else
+				match = match_string(currentFCB.fileName, filename);
+			if (match)//文件名匹配成功
 			{
 				char *str = new char[8];
 				if (currentFCB.fileType == 0)
@@ -749,7 +770,7 @@ void FileManage::showAtt(char* filename)
 					j++;
 				}
 				time[j] = '\0';
-				
+
 				printf("%-16s", currentFCB.fileName);
 				printf("%6d bytes      ", currentFCB.fileSize);
 				cout << str << "      ";
@@ -817,6 +838,7 @@ void FileManage::write(char *filename)
 					content[i] = tmpChar;
 
 				}
+				//fcb[fcb_son].fileSize = 4096*69;
 				fcb[fcb_son].fileSize = charcount;
 				blockNum = fcb[fcb_son].fileSize / 4096 + 1;
 				for (int i = 0; i < BLKNUM; i++) {
@@ -965,6 +987,46 @@ void FileManage::map(char *filename)
 	}
 }
 
+//bfs从根节点查找指定的目录
+int FileManage::bfsSearch(char *dirname)
+{
+	int stackNumCount = 0,tmpStack = 0;							//stackNumCount:记录所有的堆栈元素个数,tmpStack：当前的栈下标
+	int fcbNumStack[20];
+	int tmpFcbNum = fcb[0].sFCB;
+	while (true)
+	{
+		if (strcmp(fcb[tmpFcbNum].fileName, dirname) == 0)
+			return tmpFcbNum;
+		else
+		{
+			if (fcb[tmpFcbNum].sFCB != -1)							//有子节点					
+			{
+				fcbNumStack[stackNumCount] = fcb[tmpFcbNum].sFCB;
+				stackNumCount++;
+			}
+			tmpFcbNum = fcb[tmpFcbNum].rFCB;
+			if (tmpFcbNum == -1)
+			{
+				while (1)
+				{
+					if (tmpFcbNum == -1)
+					{
+						tmpFcbNum = fcbNumStack[tmpStack];
+					}
+					else
+					{
+						break;
+					}
+					tmpStack++;
+				}
+			}
+
+			if (tmpStack > stackNumCount)							//没找到返回-1		
+				return -1;
+		}
+	}
+}
+
 //查找文件、文件夹的fcb序列号，不存在就返回-1
 int FileManage::fcbSearch(char *filename)
 {
@@ -975,8 +1037,10 @@ int FileManage::fcbSearch(char *filename)
 	else
 	{
 		//bfs查找
-		for (;; columnFcbNum = fcb[columnFcbNum].sFCB)
+		for (;;)
 		{
+			columnFcbNum = fcb[columnFcbNum].sFCB;
+			//cout << fcb[columnFcbNum].fileName << endl;
 			int rowFcbNum = columnFcbNum;
 			for (;; rowFcbNum = fcb[rowFcbNum].rFCB)
 			{
@@ -1004,10 +1068,12 @@ void FileManage::move(char *filename, char *dirname)
 	int moveflag;
 	//首先查找当前目录下是否存在此文件,tempFcbNum（fileflag）是需要移动的文件fcb下标
 	int tempFcbNum = fcb[fcb_cur].sFCB;
+	//int tempFcbNum2 = fcb[fcb_cur].sFCB;
 	if (tempFcbNum == -1) {
 		printf("当前目录为空，请重新操作。\n");
 		return;
 	}
+	//.
 	for (;; tempFcbNum = fcb[tempFcbNum].rFCB)
 	{
 		//cout << "当前文件名：" << fcb[tempFcbNum].fileName << endl;
@@ -1022,8 +1088,8 @@ void FileManage::move(char *filename, char *dirname)
 			return;
 		}
 	}
-	//fileflag是要移动的文件的fcb号，dirflag是目录的fcb号
-	dirflag = fcbSearch(dirname);
+	dirflag = bfsSearch(dirname);
+	//打印出对应目录的序号
 	if (dirflag == -1)
 	{
 		printf("不存在该目录，请新建或重新输入。\n");
@@ -1074,7 +1140,11 @@ void FileManage::move(char *filename, char *dirname)
 	}
 }
 
-
+//清空屏幕内容
+void FileManage::clear()
+{
+	system("CLS");
+}
 //删除文件，fcb_cur改变为被删除文件的父节点
 
 bool FileManage::match_string(const char* str, const char* strpattern)
@@ -1385,6 +1455,7 @@ bool FileManage::copy(string filename1, string filename2) {
 			printf("在当前目录下该文件已存在，如果要覆盖当前文件请输入y,不覆盖输入n\n");
 			char command;
 			cin >> command;
+			getchar();
 			if (command == 'y') {
 				//用户选择覆盖
 				char c[14]="";
@@ -1601,6 +1672,7 @@ bool FileManage::copy(string filename1, string filename2) {
 				printf("该文件已存在，是否覆盖？覆盖的话输入y,不覆盖的话输入n\n");
 				char  command;
 				cin >> command;
+				getchar();
 				if (command == 'y') {
 					struct FCB firstFile = fcb[flag1];//获取第一个文件的fcb
 					struct FCB secondFile = fcb[flag2];//获取第二个文件的fcb

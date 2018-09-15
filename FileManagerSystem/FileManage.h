@@ -89,8 +89,10 @@ public:
 	void read(int,int);					                          //读数据
 	void show(char* );					                          //显示文件
 	void move(char *, char * );			                          //将指定路径下的文件移动到新的路径中
+	int bfsSearch(char *);
 	int fcbSearch(char *);
 	void map(char *);
+	void clear();
 
 	//hl
 	//void getMap(char str[20]);                                  //获取文件在磁盘中所占用的所有的盘块
